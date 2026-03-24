@@ -106,6 +106,21 @@ async function applyXcodeChanges(
     warnOnce(
       `Target "${targetToUpdate.props.productName}" already exists, updating instead of creating a new one`,
     );
+
+    // Guard: if buildConfigurationList is undefined (corrupted by old xcode npm package),
+    // reset so we create a fresh target instead of crashing on .removeFromProject().
+    if (targetToUpdate && !targetToUpdate.props.buildConfigurationList) {
+        targetToUpdate = undefined;
+    }
+    if (targetToUpdate) {
+        const configList = targetToUpdate.props.buildConfigurationList;
+        const buildConfigurations = configList === null || configList === void 0 ? void 0 : configList.props.buildConfigurations;
+        if (!configList ||
+            !Array.isArray(buildConfigurations) ||
+            typeof configList.removeFromProject !== "function") {
+            targetToUpdate = undefined;
+        }
+    }
   }
 
   const magicCwd = path.join(config._internal!.projectRoot, "ios", props.cwd);
@@ -262,22 +277,23 @@ async function applyXcodeChanges(
   }
 
   if (targetToUpdate) {
+    const configList = targetToUpdate.props.buildConfigurationList;
     // Remove existing build phases
-    targetToUpdate.props.buildConfigurationList.props.buildConfigurations.forEach(
-      (config) => {
-        config.getReferrers().forEach((ref) => {
-          ref.removeReference(config.uuid);
-        });
-        config.removeFromProject();
-      },
-    );
+    configList.props.buildConfigurations.forEach((config) => {
+             config.getReferrers().forEach((ref) => {
+                 ref.removeReference(config.uuid);
+             });
+
+            if (typeof config.removeFromProject === "function") {
+                config.removeFromProject();
+            }
+    });
     // Remove existing build configuration list
-    targetToUpdate.props.buildConfigurationList
-      .getReferrers()
-      .forEach((ref) => {
-        ref.removeReference(targetToUpdate!.props.buildConfigurationList.uuid);
-      });
-    targetToUpdate.props.buildConfigurationList.removeFromProject();
+
+    configList.getReferrers().forEach((ref) => {
+        ref.removeReference(configList.uuid);
+    });
+    configList.removeFromProject();
 
     // Create new build phases
     targetToUpdate.props.buildConfigurationList =
